@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vc-tools-adk-data
+  namespace: vc-tools
+  labels:
+    app: vc-tools
+    component: adk-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Uncomment and specify storageClassName for specific storage class
+  # storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vc-tools-outputs
+  namespace: vc-tools
+  labels:
+    app: vc-tools
+    component: outputs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  # Uncomment and specify storageClassName for specific storage class
+  # storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vc-tools-sessions
+  namespace: vc-tools
+  labels:
+    app: vc-tools
+    component: sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  # Uncomment and specify storageClassName for specific storage class
+  # storageClassName: standard

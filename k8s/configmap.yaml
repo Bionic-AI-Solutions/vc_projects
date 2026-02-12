@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vc-tools-config
+  namespace: vc-tools
+data:
+  # ADK Web Server Configuration
+  ADK_HOST: "0.0.0.0"
+  ADK_PORT: "8000"
+
+  # Application Settings
+  LOG_LEVEL: "INFO"
+  MAX_WORKERS: "4"
+
+  # Output Settings
+  OUTPUT_DIR: "/app/vc_due_diligence/outputs"
+  MAX_OUTPUT_SIZE_MB: "100"
+
+  # Chart Generation Settings
+  CHART_DPI: "150"
+  CHART_FORMAT: "png"
+
+  # PDF Generation Settings
+  PDF_PAGE_SIZE: "A4"
+  PDF_MARGIN: "15mm"

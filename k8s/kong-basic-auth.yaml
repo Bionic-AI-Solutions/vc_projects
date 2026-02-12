@@ -1,0 +1,38 @@
+# Kong Basic Authentication Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: basic-auth
+  namespace: vc-tools
+plugin: basic-auth
+config:
+  hide_credentials: true
+---
+# Kong Consumer: Sudhir (without plugin annotation)
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: sudhir
+  namespace: vc-tools
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: sudhir@fyda.net
+credentials:
+- sudhir-basic-auth
+---
+# Basic Auth Credentials for Sudhir
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sudhir-basic-auth
+  namespace: vc-tools
+  labels:
+    konghq.com/credential: basic-auth
+stringData:
+  kongCredType: basic-auth
+  username: sudhir@fyda.net
+  password: Th1515T0p53cr3t
+---
+# NOTE: Salil's KongConsumer lives in comfyui namespace (Kong consumers are global).
+# Consumer: salil-kadam (comfyui ns) with credential: basic-auth-salil (comfyui ns)
+# Username: salil.kadam@bionicaisolutions.com

@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vc-tools
+  namespace: vc-tools
+  labels:
+    app: vc-tools
+    version: v1
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: vc-tools
+  template:
+    metadata:
+      labels:
+        app: vc-tools
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-creds
+      containers:
+      # Kong Proxy Sidecar - Captures Kong headers and forwards to main app
+      - name: kong-proxy
+        image: docker4zerocool/vc-due-diligence:latest
+        imagePullPolicy: Always
+        command: ["python", "/app/kong-proxy.py"]
+        env:
+        - name: REDIS_HOST
+          value: "redis-cluster.redis.svc.cluster.local"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      # Main VC Tools Application
+      - name: vc-tools
+        image: docker4zerocool/vc-due-diligence:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8001
+          name: adk-http
+          protocol: TCP
+        env:
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vc-backend-secret
+              key: GOOGLE_API_KEY
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PYTHONPATH
+          value: "/app"
+        - name: ADK_FORCE_LOCAL_STORAGE
+          value: "1"
+        # SMTP Configuration for Email Reports
+        - name: SMTP_HOST
+          value: "gmail-relay"
+        - name: SMTP_PORT
+          value: "25"
+        - name: SMTP_USE_AUTH
+          value: "false"
+        - name: SMTP_FROM_EMAIL
+          value: "info@bionicaisolutions.com"
+        - name: SMTP_FROM_NAME
+          value: "VC Due Diligence AI"
+        # Redis for per-user email tracking
+        - name: REDIS_HOST
+          value: "redis-cluster.redis.svc.cluster.local"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8001
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+        - name: adk-data
+          mountPath: /home/appuser/.adk
+        - name: outputs
+          mountPath: /app/vc_due_diligence/_outputs
+        - name: sessions
+          mountPath: /app/vc_due_diligence/.adk
+      volumes:
+      - name: shared-data
+        emptyDir: {}
+      - name: adk-data
+        persistentVolumeClaim:
+          claimName: vc-tools-adk-data
+      - name: outputs
+        persistentVolumeClaim:
+          claimName: vc-tools-outputs
+      - name: sessions
+        persistentVolumeClaim:
+          claimName: vc-tools-sessions
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      restartPolicy: Always

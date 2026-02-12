@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vc-tools
+  namespace: vc-tools
+  annotations:
+    # Kong Ingress Controller annotations
+    konghq.com/protocols: "https,http"
+    konghq.com/https-redirect-status-code: "301"
+    # Enable SSE support and Basic Auth
+    konghq.com/plugins: sse-cors, basic-auth
+    # Disable buffering for SSE
+    konghq.com/preserve-host: "true"
+    konghq.com/strip-path: "false"
+
+    # AWS ALB Ingress Controller annotations (alternative)
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/healthcheck-path: /health
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+
+    # GKE Ingress annotations (alternative)
+    # kubernetes.io/ingress.class: "gce"
+    # kubernetes.io/ingress.global-static-ip-name: "vc-tools-ip"
+
+    # Cert Manager for SSL (optional)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: kong
+  rules:
+  - host: vc.baisoln.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vc-tools
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - vc.baisoln.com
+    secretName: vc-tools-tls

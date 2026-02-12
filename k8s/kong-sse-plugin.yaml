@@ -1,0 +1,53 @@
+# Kong plugin to support Server-Sent Events (SSE)
+# Disables buffering for streaming responses
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: sse-cors
+  namespace: vc-tools
+plugin: cors
+config:
+  origins:
+    - "*"
+  methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  headers:
+    - Accept
+    - Accept-Version
+    - Content-Length
+    - Content-MD5
+    - Content-Type
+    - Date
+    - X-Auth-Token
+    - Cache-Control
+  exposed_headers:
+    - X-Auth-Token
+  credentials: true
+  max_age: 3600
+---
+# Request size and timeout configuration
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: sse-request-size
+  namespace: vc-tools
+plugin: request-size-limiting
+config:
+  allowed_payload_size: 50
+  size_unit: megabytes
+---
+# Rate limiting (optional)
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: sse-rate-limit
+  namespace: vc-tools
+plugin: rate-limiting
+config:
+  minute: 1000
+  policy: local
+disabled: true  # Disabled by default
