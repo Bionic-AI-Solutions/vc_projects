@@ -1,18 +1,57 @@
-# 📊 AI VC Due Diligence Agent Team
+# AI VC Due Diligence Agent Team
 
-A multi-agent AI pipeline for startup investment analysis, built with [Google ADK](https://google.github.io/adk-docs/), Gemini 3 Pro, Gemini 3 Flash and Nano Banana Pro.
+A multi-agent AI pipeline for startup investment analysis, built with [Google ADK](https://google.github.io/adk-docs/) and Gemini 3 Pro/Flash. Deployed on Kubernetes with Kong authentication, per-user email delivery via Redis, and Gmail SMTP relay.
 
 **Works with any startup** - from early-stage unknowns to well-funded companies. Just provide a company name, website URL, or both.
 
 ## Features
 
-- 🔍 **Live Research** - Real-time web search for company and market data
-- 🌐 **URL Support** - Analyze any startup by their website URL
-- 📈 **Revenue Charts** - Bear/Base/Bull projection charts with matplotlib
-- 🧠 **Deep Risk Analysis** - Comprehensive risk assessment across 5 categories
-- 📄 **Professional Reports** - McKinsey-style HTML investment reports
-- 📑 **Comprehensive PDF** - Complete PDF report with all artifacts and agent outputs stitched together
-- 🎨 **Visual TL;DR** - AI-generated infographic summary for quick review
+- **Live Research** - Real-time web search for company and market data
+- **URL Support** - Analyze any startup by their website URL
+- **Revenue Charts** - Bear/Base/Bull projection charts with matplotlib
+- **Deep Risk Analysis** - Comprehensive risk assessment across 5 categories
+- **Professional Reports** - McKinsey-style HTML investment reports
+- **Comprehensive PDF** - Complete PDF report with all artifacts and agent outputs
+- **Visual TL;DR** - AI-generated infographic summary for quick review
+- **Per-User Email Delivery** - PDF reports emailed to the authenticated user via Kong + Redis
+- **Multi-User Support** - Kong basic-auth with per-session email isolation
+
+## Architecture Overview
+
+```
+Internet
+    |
+    v
+┌─────────────────────────────────────────────────────────────────┐
+│  Kong Ingress Controller (basic-auth + CORS)                     │
+│  - Authenticates users via basic-auth                            │
+│  - Adds X-Consumer-Username header to upstream requests          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           |
+                           v
+┌─────────────────────────────────────────────────────────────────┐
+│  vc-tools Pod (vc-tools namespace)                               │
+│                                                                   │
+│  ┌──────────────────┐         ┌──────────────────────────────┐   │
+│  │  kong-proxy       │  :8000  │  vc-tools (ADK app)          │   │
+│  │  (sidecar)        │────────>│  :8001                       │   │
+│  │                   │         │                              │   │
+│  │  Captures X-Con-  │         │  7-stage analysis pipeline   │   │
+│  │  sumer-Username   │         │  PDF generation + email      │   │
+│  │  Stores email in  │         │  Reads email from Redis      │   │
+│  │  Redis by session │         │                              │   │
+│  └──────────────────┘         └──────────────────────────────┘   │
+│           |                              |                        │
+└───────────┼──────────────────────────────┼───────────────────────┘
+            |                              |
+            v                              v
+   ┌─────────────────┐          ┌─────────────────────┐
+   │  Redis Cluster    │          │  Gmail SMTP Relay    │
+   │  (redis ns)       │          │  (vc-tools ns)       │
+   │  session_email:   │          │  smtp-relay.gmail.   │
+   │  {session_id}     │          │  com:587             │
+   └─────────────────┘          └─────────────────────┘
+```
 
 ## What It Does
 
@@ -24,90 +63,132 @@ Given a startup name or URL, the pipeline automatically:
 4. **Assesses risks** - Market, execution, financial, regulatory, exit
 5. **Generates investor memo** - Structured investment thesis
 6. **Creates HTML report** - Professional due diligence document
-7. **Generates comprehensive PDF** - Complete report with all artifacts and formatted agent outputs
+7. **Generates comprehensive PDF** - Complete report emailed to authenticated user
 8. **Generates infographic** - Visual summary for quick review
 
-## Quick Start
+## Deployment
 
-### 1. Clone & Navigate
+### Prerequisites
+
+- Kubernetes cluster with Kong Ingress Controller
+- Redis cluster (e.g., `redis-cluster.redis.svc.cluster.local:6379`)
+- Google API key for Gemini models
+- Google Workspace with SMTP relay configured
+- Docker Hub access for image push
+
+### Quick Deploy
+
 ```bash
-git clone https://github.com/Shubhamsaboo/awesome-llm-apps.git
-cd awesome-llm-apps/advanced_ai_agents/multi_agent_apps/agent_teams/ai_vc_due_diligence_agent_team
+# Clone
+git clone https://github.com/Bionic-AI-Solutions/vc_projects.git
+cd vc_projects
+
+# Build and push Docker image
+./build-and-push.sh
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secret.yaml          # Set GOOGLE_API_KEY here
+kubectl apply -f k8s/pvc.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/kong-basic-auth.yaml
+kubectl apply -f k8s/kong-sse-plugin.yaml
+kubectl apply -f k8s/gmail-relay-deployment.yaml
 ```
 
-### 2. Set Environment
-```bash
-export GOOGLE_API_KEY=your_api_key
-# Or create .env file:
-echo "GOOGLE_API_KEY=your_api_key" > .env
-```
+### Environment Variables
 
-### 3. Install & Run
+| Variable | Container | Description |
+|----------|-----------|-------------|
+| `GOOGLE_API_KEY` | vc-tools | Gemini API key |
+| `REDIS_HOST` | kong-proxy, vc-tools | Redis cluster hostname |
+| `SMTP_HOST` | vc-tools | Gmail relay service name (`gmail-relay`) |
+| `SMTP_PORT` | vc-tools | SMTP port (`25`) |
+| `SMTP_FROM_EMAIL` | vc-tools | Sender address (`info@bionicaisolutions.com`) |
+| `SMTP_USE_AUTH` | vc-tools | `false` (relay handles auth) |
+
+### Local Development
+
 ```bash
-# Create and activate virtual environment (avoids externally-managed-environment error)
+# Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
+# Install dependencies
 pip install -r requirements.txt
 
-# Run from project root - ADK discovers the vc_due_diligence agent
+# Set API key
+export GOOGLE_API_KEY=your_api_key
+
+# Run with ADK web UI
 adk web
 ```
-
-### 4. Try It
-Works with company names, URLs, or both:
 
 Open `http://localhost:8000` and try:
 - *"Analyze https://agno.com for Series A investment of $30-50M"*
 - *"Research Genspark AI for its next funding round"*
-- *"Analyze Lovable for Series C funding opportunities"*
-- *"Research emergent.sh for Series B funding in the $40-60M range"*
+- *"Analyze riskprofiler.io for Series B funding"*
 
-**UI Tip**: On first use, expand the Chat interface and collapse the Trace panel for the best experience. Your browser will remember this preference. See [UI_CONFIGURATION.md](UI_CONFIGURATION.md) for details.
+## Per-User Email Flow
 
+The system ensures each user receives their own PDF report, even in multi-user environments:
+
+1. **Kong authenticates** the user via basic-auth and adds `X-Consumer-Username` header
+2. **kong-proxy sidecar** intercepts the request, extracts the email and ADK session_id
+3. **Redis stores** the mapping: `session_email:{session_id} -> user@email.com` (24h TTL)
+4. **tools.py** retrieves the email from Redis using `tool_context.session.id` at PDF generation time
+5. **Gmail relay** sends the PDF to the correct user via `smtp-relay.gmail.com:587`
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `kong-proxy.py` | Sidecar proxy - captures Kong auth headers, stores email in Redis |
+| `server.py` | Helper module - reads per-session email from Redis |
+| `vc_due_diligence/tools.py` | Analysis tools - chart, report, PDF generation, email sending |
+| `vc_due_diligence/agent.py` | Agent pipeline definition - 7 sequential stages |
 
 ## Pipeline Architecture
 
 ```
 User Query: "Analyze https://agno.com for Series A"
-    │
-    ▼
+    |
+    v
 ┌─────────────────────────────────────────────────────────────────┐
-│              DueDiligencePipeline (SequentialAgent)             │
-│                                                                 │
-│  ┌─────────────┐    ┌────────────────┐    ┌──────────────────┐  │
-│  │  Stage 1    │    │    Stage 2     │    │     Stage 3      │  │
-│  │  Company    │───▶│    Market      │───▶│    Financial     │  │
-│  │  Research   │    │    Analysis    │    │    Modeling      │  │
-│  └─────────────┘    └────────────────┘    └──────────────────┘  │
-│         │                   │                      │            │
-│         ▼                   ▼                      ▼            │
-│  ┌─────────────┐    ┌────────────────┐    ┌──────────────────┐  │
-│  │  Stage 4    │    │    Stage 5     │    │     Stage 6      │  │
-│  │    Risk     │───▶│   Investor     │───▶│  HTML + PDF      │  │
-│  │ Assessment  │    │     Memo       │    │    Generator     │  │
-│  └─────────────┘    └────────────────┘    └──────────────────┘  │
-│                                                    │            │
-│                                                    ▼            │
-│                                          ┌──────────────────┐   │
-│                                          │     Stage 7      │   │
-│                                          │   Infographic    │   │
-│                                          │    Generator     │   │
-│                                          └──────────────────┘   │
+│              DueDiligencePipeline (SequentialAgent)               │
+│                                                                   │
+│  ┌─────────────┐    ┌────────────────┐    ┌──────────────────┐   │
+│  │  Stage 1     │    │    Stage 2     │    │     Stage 3      │   │
+│  │  Company     │───>│    Market      │───>│    Financial     │   │
+│  │  Research    │    │    Analysis    │    │    Modeling      │   │
+│  └─────────────┘    └────────────────┘    └──────────────────┘   │
+│         │                   │                      │              │
+│         v                   v                      v              │
+│  ┌─────────────┐    ┌────────────────┐    ┌──────────────────┐   │
+│  │  Stage 4     │    │    Stage 5     │    │     Stage 6      │   │
+│  │    Risk      │───>│   Investor     │───>│  HTML + PDF      │   │
+│  │ Assessment   │    │     Memo       │    │    Generator     │   │
+│  └─────────────┘    └────────────────┘    └──────────────────┘   │
+│                                                    │              │
+│                                                    v              │
+│                                          ┌──────────────────┐    │
+│                                          │     Stage 7       │    │
+│                                          │   Infographic     │    │
+│                                          │    Generator      │    │
+│                                          └──────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
-    │
-    ▼
+    |
+    v
 Artifacts: revenue_chart.png, investment_report.html,
-           comprehensive_report.pdf, infographic.png
+           comprehensive_report.pdf (emailed), infographic.jpg
 ```
-
----
 
 ## Agent Details
 
 ### Stage 1: Company Research Agent
-
-**Purpose:** Gathers comprehensive company information through web search.
 
 | Property | Value |
 |----------|-------|
@@ -115,230 +196,99 @@ Artifacts: revenue_chart.png, investment_report.html,
 | Tools | `google_search` |
 | Output Key | `company_info` |
 
-**What it researches:**
-- **Company Basics** - What they do, founding date, HQ location, team size
-- **Founders & Team** - Key people, backgrounds, LinkedIn profiles
-- **Product/Technology** - Core offering, how it works, target customers
-- **Funding History** - Rounds raised, investors, amounts
-- **Traction** - Customers, partnerships, growth signals
-- **Recent News** - Press coverage, product launches, announcements
-
-**For early-stage startups:** Checks website, LinkedIn, Crunchbase, AngelList, founder interviews, and notes when information is limited.
-
----
+Researches company basics, founders, product/technology, funding history, traction, and recent news.
 
 ### Stage 2: Market Analysis Agent
-
-**Purpose:** Analyzes market size, competition, and positioning.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-flash-preview` |
 | Tools | `google_search` |
-| Input | `{company_info}` |
 | Output Key | `market_analysis` |
 
-**What it analyzes:**
-- **Market Size** - TAM, SAM, growth rate from industry reports
-- **Competitors** - Who else is in the space, their funding/traction
-- **Positioning** - How the company differentiates
-- **Trends** - Market drivers, emerging tech, regulatory changes
-
-**For early-stage:** Focuses on broader market category, identifies well-funded competitors, looks for market validation signals.
-
----
+Analyzes market size (TAM/SAM), competitors, positioning, and trends.
 
 ### Stage 3: Financial Modeling Agent
-
-**Purpose:** Builds revenue projections and generates financial charts.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-pro-preview` |
 | Tools | `generate_financial_chart` |
-| Input | `{company_info}`, `{market_analysis}` |
 | Output Key | `financial_model` |
 
-**What it calculates:**
-- **Current Metrics** - Estimated ARR, growth stage
-- **Growth Scenarios** (5-year projections):
-  - Bear Case: Conservative growth rates
-  - Base Case: Expected trajectory
-  - Bull Case: Optimistic scenario
-- **Return Analysis** - Exit valuations, MOIC, IRR estimates
-
-**Stage benchmarks:**
-- Seed: $0.1-0.5M ARR, 3-5x growth
-- Series A: $1-3M ARR, 2-3x growth
-- Series B: $5-15M ARR, 1.5-2x growth
-
-**Artifact:** Saves `revenue_chart_TIMESTAMP.png` with Bear/Base/Bull projections.
-
----
+Builds Bear/Base/Bull revenue projections and generates financial charts.
 
 ### Stage 4: Risk Assessment Agent
-
-**Purpose:** Conducts deep risk analysis across multiple categories.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-pro-preview` |
 | Tools | None (extended reasoning) |
-| Input | `{company_info}`, `{market_analysis}`, `{financial_model}` |
 | Output Key | `risk_assessment` |
 
-**Risk categories analyzed:**
-1. **Market Risk** - Competition, timing, adoption barriers
-2. **Execution Risk** - Team gaps, technology challenges, scaling
-3. **Financial Risk** - Burn rate, fundraising, unit economics
-4. **Regulatory Risk** - Compliance, legal, geopolitical
-5. **Exit Risk** - Acquirer landscape, IPO viability
-
-**For each risk provides:**
-- Severity (Low/Medium/High/Critical)
-- Description with evidence
-- Mitigation strategy
-
-**Final output:**
-- Overall Risk Score (1-10)
-- Top 3 risks that could kill the investment
-- Recommended protective terms
-
----
+Analyzes market, execution, financial, regulatory, and exit risks with severity ratings.
 
 ### Stage 5: Investor Memo Agent
-
-**Purpose:** Synthesizes all findings into a structured investment memo.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-pro-preview` |
 | Tools | None |
-| Input | All previous stages |
 | Output Key | `investor_memo` |
 
-**Memo structure:**
-1. **Executive Summary** - Company one-liner, recommendation, key highlights
-2. **Company Overview** - What they do, team, product/technology
-3. **Funding & Valuation** - History, estimated valuation range
-4. **Market Opportunity** - Size, growth, competitors, differentiation
-5. **Financial Analysis** - Revenue, unit economics, runway
-6. **Risk Analysis** - Top risks with severity, overall score
-7. **Investment Thesis** - Why invest, concerns, return scenarios
-8. **Recommendation** - Final verdict, suggested next steps
-
-**Recommendations:** Strong Buy / Buy / Hold / Pass
-
----
+Synthesizes all findings into a structured investment memo with recommendation.
 
 ### Stage 6: Report Generator Agent
-
-**Purpose:** Creates professional HTML and comprehensive PDF investment reports.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-flash-preview` |
 | Tools | `generate_html_report`, `generate_pdf_report` |
-| Input | All previous stage outputs |
 | Output Key | `report_results` |
 
-**HTML Report features:**
-- McKinsey/Goldman Sachs styling
-- Dark blue (#1a365d) and gold (#d4af37) color scheme
-- Executive summary at top
-- Clear section headers with professional typography
-- Data tables for metrics
-- Print-friendly layout
-
-**PDF Report features:**
-- **Comprehensive 15-20 page document** ready for delivery
-- **Cover page** with confidentiality notice
-- **Table of contents** for easy navigation
-- **All agent outputs** formatted as dedicated sections:
-  - Company Research Findings
-  - Market Analysis
-  - Financial Modeling & Projections
-  - Risk Assessment
-  - Executive Summary (Investor Memo)
-- **Embedded artifacts**:
-  - Revenue projection chart (PNG)
-  - Investment infographic (JPG/PNG)
-- **Professional formatting** with page breaks, headers, and styling
-- **Document metadata** section with generation details
-
-**Artifacts:**
-- Saves `investment_report_TIMESTAMP.html` viewable in any browser
-- Saves `comprehensive_report_TIMESTAMP.pdf` ready for distribution
-
----
+Creates McKinsey-style HTML report and comprehensive 15-20 page PDF. The PDF is automatically emailed to the authenticated user.
 
 ### Stage 7: Infographic Generator Agent
-
-**Purpose:** Creates a visual summary infographic using AI image generation.
 
 | Property | Value |
 |----------|-------|
 | Model | `gemini-3-flash-preview` |
 | Tools | `generate_infographic` (uses `gemini-3-pro-image-preview`) |
-| Input | `{investor_memo}` |
 | Output Key | `infographic_result` |
 
-**Infographic includes:**
-- Company name prominently displayed
-- Key metrics in large, bold numbers
-- Market size visualization
-- Risk score indicator (1-10 scale)
-- Investment recommendation badge
-- Professional investment banking aesthetic
-
-**Artifact:** Saves `infographic_TIMESTAMP.png` for quick visual review.
-
----
+Creates a visual summary infographic using AI image generation.
 
 ## Project Structure
 
 ```
-ai_due_diligence_agent/
-├── __init__.py        # Exports root_agent
-├── agent.py           # All 7 agents + pipeline defined here
-├── tools.py           # Custom tools (chart, report, infographic)
-├── outputs/           # Generated artifacts saved here
-├── requirements.txt   # Python dependencies
-└── README.md          # This file
+vc_projects/
+├── vc_due_diligence/
+│   ├── __init__.py          # Exports root_agent
+│   ├── agent.py             # 7-stage pipeline definition
+│   └── tools.py             # Chart, report, PDF, email, infographic tools
+├── kong-proxy.py            # Sidecar proxy for Kong header capture
+├── server.py                # Redis-based email lookup helper
+├── requirements.txt         # Python dependencies
+├── Dockerfile               # Multi-stage build with WeasyPrint
+├── build-and-push.sh        # Docker build and push script
+├── k8s/
+│   ├── deployment.yaml      # Pod with kong-proxy sidecar + vc-tools
+│   ├── service.yaml         # ClusterIP service
+│   ├── ingress.yaml         # Kong ingress with basic-auth + CORS
+│   ├── kong-basic-auth.yaml # Kong consumers and credentials
+│   ├── kong-sse-plugin.yaml # SSE support plugins
+│   ├── gmail-relay-deployment.yaml  # Postfix relay to smtp-relay.gmail.com
+│   ├── configmap.yaml       # App configuration
+│   ├── secret.yaml          # API keys
+│   ├── pvc.yaml             # Persistent volumes for outputs/sessions
+│   ├── namespace.yaml       # vc-tools namespace
+│   ├── hpa.yaml             # Horizontal pod autoscaler
+│   └── kustomization.yaml   # Kustomize overlay
+├── .devcontainer/           # VS Code dev container config
+├── .claude/                 # Claude Code settings, skills, hooks
+├── .cursor/                 # Cursor IDE rules and commands
+└── .agents/                 # Agent skills (browser, skill-creator)
 ```
-
-## Generated Artifacts
-
-All artifacts are saved to the **Artifacts tab** in ADK web and the **`outputs/`** folder:
-
-```
-outputs/
-├── revenue_chart_20260104_143030.png           # Financial projections
-├── investment_report_20260104_143052.html      # HTML report
-├── comprehensive_report_20260104_143055.pdf    # Complete PDF with all data
-└── infographic_20260104_143105.png             # Visual TL;DR
-```
-
-| Artifact | Format | Description |
-|----------|--------|-------------|
-| Revenue Chart | PNG | Bear/Base/Bull 5-year projections |
-| Investment Report | HTML | Full due diligence document (web viewable) |
-| **Comprehensive Report** | **PDF** | **15-20 page PDF with all agent outputs and embedded artifacts** |
-| Infographic | PNG/JPG | Visual summary one-pager |
-
----
-
-## ADK Features Demonstrated
-
-| Feature | Usage |
-|---------|-------|
-| **SequentialAgent** | 7-stage pipeline orchestration |
-| **LlmAgent** | All specialized agents |
-| **google_search** | Real-time company/market research |
-| **Custom Tools** | Chart generation, HTML reports, infographics |
-| **Artifacts** | Saving and versioning generated files |
-| **State Management** | Passing data between pipeline stages via `output_key` |
-| **Multi-modal Output** | Text analysis + image generation |
 
 ## Models Used
 
@@ -349,15 +299,30 @@ outputs/
 | FinancialModeling | `gemini-3-pro-preview` | Complex calculations |
 | RiskAssessment | `gemini-3-pro-preview` | Deep reasoning |
 | InvestorMemo | `gemini-3-pro-preview` | Synthesis quality |
-| ReportGenerator | `gemini-3-flash-preview` | Fast HTML generation |
+| ReportGenerator | `gemini-3-flash-preview` | Fast HTML/PDF generation |
 | InfographicGenerator | `gemini-3-flash-preview` | Orchestration |
 | Infographic Tool | `gemini-3-pro-image-preview` | Image generation |
 
----
+## Kong Authentication
+
+Users are authenticated via Kong basic-auth. Consumer credentials are managed as Kubernetes secrets:
+
+- **Sudhir**: `sudhir@fyda.net` (consumer in `vc-tools` namespace)
+- **Salil**: `salil.kadam@bionicaisolutions.com` (consumer in `comfyui` namespace, Kong consumers are global)
+
+To add a new user, create a KongConsumer and basic-auth credential Secret. See `k8s/kong-basic-auth.yaml` for examples.
+
+## Gmail SMTP Relay
+
+Email delivery uses a Postfix relay pod that forwards to Google Workspace SMTP relay:
+
+- **Internal**: vc-tools connects to `gmail-relay:25` (no auth needed)
+- **External**: Postfix relays to `[smtp-relay.gmail.com]:587` with STARTTLS
+- **Sender**: `info@bionicaisolutions.com` (must match Workspace allowed sender domain)
+- **IPv4 only**: Forced via `POSTFIX_inet_protocols=ipv4` (cluster has no IPv6 route)
 
 ## Learn More
 
 - [Google ADK Documentation](https://google.github.io/adk-docs/)
-- [Multi Agent Patterns in ADK](https://developers.googleblog.com/developers-guide-to-multi-agent-patterns-in-adk/)
+- [Kong Ingress Controller](https://docs.konghq.com/kubernetes-ingress-controller/)
 - [Gemini API](https://ai.google.dev/gemini-api/docs)
-- [Gemini Image Generation](https://ai.google.dev/gemini-api/docs/image-generation)
