@@ -188,11 +188,14 @@ async def generate_financial_chart(
     Returns:
         dict with status and artifact info
     """
+    # Store company name in session state for display in the session list sidebar
+    tool_context.state["session_name"] = company_name
+
     try:
         import matplotlib.pyplot as plt
         import matplotlib
         matplotlib.use('Agg')
-        
+
         # Parse growth rates
         bear = [float(x.strip()) for x in bear_rates.split(",")]
         base = [float(x.strip()) for x in base_rates.split(",")]
