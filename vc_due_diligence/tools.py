@@ -188,8 +188,9 @@ async def generate_financial_chart(
     Returns:
         dict with status and artifact info
     """
-    # Store company name in session state for display in the session list sidebar
-    tool_context.state["session_name"] = company_name
+    # Store company name + date in session state for display in the session list sidebar
+    today_date = datetime.now().strftime("%B %d, %Y")
+    tool_context.state["session_name"] = f"{company_name} - {today_date}"
 
     try:
         import matplotlib.pyplot as plt
@@ -474,14 +475,15 @@ async def generate_pdf_report(
             else:
                 logger.info(f"No user email available for session {current_session_id} - PDF will be generated but not emailed")
 
-        # Extract company name from investor memo for email subject and report title
+        # Get company name from session state (set by FinancialModelingAgent via generate_financial_chart)
         company_name = "Investment Opportunity"
         try:
-            first_lines = investor_memo.split('\n')[:10]
-            for line in first_lines:
-                if line.strip() and not line.startswith('#'):
-                    company_name = line.strip()[:50]
-                    break
+            session_name = tool_context.state.get("session_name", "")
+            if session_name and " - " in session_name:
+                # session_name is "<Company Name> - <Date>", extract just the company name
+                company_name = session_name.rsplit(" - ", 1)[0].strip()
+            elif session_name:
+                company_name = session_name.strip()
         except Exception:
             pass
 
@@ -876,7 +878,8 @@ async def generate_pdf_report(
         pdf_bytes = HTML(string=html_content).write_pdf()
 
         # Save as ADK artifact
-        artifact_name = f"comprehensive_report_{timestamp}.pdf"
+        today_date_str = datetime.now().strftime("%B %d, %Y")
+        artifact_name = f"VC for {company_name} - {today_date_str}.pdf"
         pdf_artifact = types.Part.from_bytes(
             data=pdf_bytes,
             mime_type="application/pdf"
