@@ -23,3 +23,28 @@ data:
   # PDF Generation Settings
   PDF_PAGE_SIZE: "A4"
   PDF_MARGIN: "15mm"
+
+  # ─── Model Configuration ───────────────────────────────────────────
+  # Override default models per agent. Runtime overrides via the web UI
+  # (gear icon) are stored in Redis and take precedence over these.
+  #
+  # Available models:
+  #   gemini-3-pro-preview       - Best reasoning ($2/$12 per 1M tokens)
+  #   gemini-3-flash-preview     - Fast, near-pro quality ($0.50/$3)
+  #   gemini-2.5-pro             - Stable, strong reasoning ($1.25/$10)
+  #   gemini-2.5-flash           - Cheapest, fast ($0.30/$2.50)
+  #   gemini-3-pro-image-preview - Image generation only
+  #
+  # MODEL_ROUTER: "gemini-3-flash-preview"
+  # MODEL_COMPANY_RESEARCH: "gemini-3-flash-preview"
+  # MODEL_MARKET_ANALYSIS: "gemini-3-flash-preview"
+  # MODEL_FACT_VERIFICATION: "gemini-3-flash-preview"
+  # MODEL_FINANCIAL_MODELING: "gemini-3-pro-preview"
+  # MODEL_RISK_ASSESSMENT: "gemini-3-pro-preview"
+  # MODEL_INVESTOR_MEMO: "gemini-3-pro-preview"
+  # MODEL_MEMO_QA: "gemini-3-pro-preview"
+  # MODEL_HTML_REPORT: "gemini-3-flash-preview"
+  # MODEL_INFOGRAPHIC: "gemini-3-flash-preview"
+  # MODEL_PDF_REPORT: "gemini-3-flash-preview"
+  # MODEL_TOOLS_HTML_GENERATION: "gemini-3-flash-preview"
+  # MODEL_TOOLS_IMAGE_GENERATION: "gemini-3-pro-image-preview"

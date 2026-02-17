@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 from google.adk.tools import ToolContext
 from google.genai import types, Client
+from .config import get_tools_model
 
 logger = logging.getLogger("DueDiligencePipeline")
 
@@ -314,7 +315,7 @@ Generate complete, valid HTML with embedded CSS."""
     try:
         client = Client()
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=get_tools_model("MODEL_TOOLS_HTML_GENERATION"),
             contents=prompt,
         )
 
@@ -390,7 +391,7 @@ Make it look like a Goldman Sachs one-pager. Professional, data-rich."""
     try:
         client = Client()
         response = await client.aio.models.generate_content(
-            model="gemini-3-pro-image-preview",
+            model=get_tools_model("MODEL_TOOLS_IMAGE_GENERATION"),
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_modalities=["TEXT", "IMAGE"]

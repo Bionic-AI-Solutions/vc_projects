@@ -27,6 +27,35 @@ logger = logging.getLogger("KongProxy")
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis-cluster.redis.svc.cluster.local")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 EMAIL_TTL_SECONDS = 86400  # 24 hours
+REDIS_CONFIG_KEY = "model_config"
+
+# Agent configuration metadata (used by config UI and API)
+AGENT_CONFIG_META = [
+    {"key": "MODEL_ROUTER", "label": "Router Agent", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_COMPANY_RESEARCH", "label": "Company Research", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_MARKET_ANALYSIS", "label": "Market Analysis", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_FACT_VERIFICATION", "label": "Fact Verification (QA1)", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_FINANCIAL_MODELING", "label": "Financial Modeling", "default": "gemini-3-pro-preview"},
+    {"key": "MODEL_RISK_ASSESSMENT", "label": "Risk Assessment", "default": "gemini-3-pro-preview"},
+    {"key": "MODEL_INVESTOR_MEMO", "label": "Investor Memo", "default": "gemini-3-pro-preview"},
+    {"key": "MODEL_MEMO_QA", "label": "Memo QA (QA2)", "default": "gemini-3-pro-preview"},
+    {"key": "MODEL_HTML_REPORT", "label": "HTML Report", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_INFOGRAPHIC", "label": "Infographic", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_PDF_REPORT", "label": "PDF Report", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_TOOLS_HTML_GENERATION", "label": "Tools: HTML Generation", "default": "gemini-3-flash-preview"},
+    {"key": "MODEL_TOOLS_IMAGE_GENERATION", "label": "Tools: Image Generation", "default": "gemini-3-pro-image-preview", "is_image": True},
+]
+
+AVAILABLE_MODELS_LIST = [
+    {"id": "gemini-3-pro-preview", "label": "Gemini 3 Pro (Preview)", "tier": "pro"},
+    {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash (Preview)", "tier": "flash"},
+    {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "pro"},
+    {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "tier": "flash"},
+]
+
+IMAGE_MODELS_LIST = [
+    {"id": "gemini-3-pro-image-preview", "label": "Gemini 3 Pro Image (Preview)"},
+]
 
 # Regex to extract session_id from ADK URL paths: /apps/{app}/users/{user_id}/sessions/{session_id}
 SESSION_ID_PATTERN = re.compile(r"/?apps/[^/]+/users/[^/]+/sessions/([^/]+)")
@@ -163,6 +192,158 @@ SESSION_NAME_SCRIPT = b"""
 </script>
 """
 
+# JavaScript for model configuration gear icon + modal overlay
+MODEL_CONFIG_SCRIPT = b"""
+<script>
+(function() {
+  var API = '/api/config/models';
+
+  function createBtn() {
+    if (document.getElementById('mc-btn')) return;
+    var b = document.createElement('button');
+    b.id = 'mc-btn';
+    b.innerHTML = '&#9881;';
+    b.title = 'Model Configuration';
+    b.style.cssText = 'position:fixed;top:8px;right:16px;z-index:10000;background:transparent;border:none;color:#b0b0b0;font-size:22px;cursor:pointer;padding:4px 8px;border-radius:4px;transition:all 0.2s;';
+    b.onmouseenter = function() { b.style.color = '#fff'; b.style.background = 'rgba(255,255,255,0.1)'; };
+    b.onmouseleave = function() { b.style.color = '#b0b0b0'; b.style.background = 'transparent'; };
+    b.onclick = openModal;
+    document.body.appendChild(b);
+  }
+
+  function openModal() {
+    if (document.getElementById('mc-ov')) return;
+    fetch(API).then(function(r) { return r.json(); }).then(renderModal)
+      .catch(function(e) { alert('Config load failed: ' + e); });
+  }
+
+  function renderModal(data) {
+    var ov = document.createElement('div');
+    ov.id = 'mc-ov';
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10001;display:flex;align-items:center;justify-content:center;';
+    ov.onclick = function(e) { if (e.target === ov) closeModal(); };
+
+    var m = document.createElement('div');
+    m.style.cssText = 'background:#1e1e2e;border-radius:12px;padding:28px 32px;min-width:540px;max-width:660px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;';
+    var t = document.createElement('h2');
+    t.textContent = 'Model Configuration';
+    t.style.cssText = 'margin:0;font-size:20px;font-weight:600;color:#fff;';
+    var xb = document.createElement('button');
+    xb.innerHTML = '&times;';
+    xb.style.cssText = 'background:none;border:none;color:#888;font-size:24px;cursor:pointer;padding:0 4px;';
+    xb.onclick = closeModal;
+    hdr.appendChild(t);
+    hdr.appendChild(xb);
+    m.appendChild(hdr);
+
+    var sub = document.createElement('p');
+    sub.textContent = 'Select models for each pipeline agent. Changes apply to subsequent runs.';
+    sub.style.cssText = 'margin:0 0 18px;font-size:13px;color:#888;';
+    m.appendChild(sub);
+
+    var tbl = document.createElement('div');
+    tbl.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+
+    for (var i = 0; i < data.agents.length; i++) {
+      var ag = data.agents[i];
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#2a2a3e;border-radius:8px;';
+
+      var ld = document.createElement('div');
+      ld.style.cssText = 'display:flex;flex-direction:column;min-width:180px;';
+      var nm = document.createElement('span');
+      nm.textContent = ag.label;
+      nm.style.cssText = 'font-size:14px;font-weight:500;';
+      var df = document.createElement('span');
+      df.textContent = 'default: ' + ag.default_model.replace('gemini-', '').replace('-preview', '');
+      df.style.cssText = 'font-size:11px;color:#666;margin-top:2px;';
+      ld.appendChild(nm);
+      ld.appendChild(df);
+      row.appendChild(ld);
+
+      var sel = document.createElement('select');
+      sel.className = 'mc-sel';
+      sel.dataset.key = ag.key;
+      sel.style.cssText = 'background:#383850;color:#e0e0e0;border:1px solid #4a4a6a;border-radius:6px;padding:6px 10px;font-size:13px;min-width:210px;cursor:pointer;outline:none;';
+      var ml = ag.is_image_model ? data.image_models : data.available_models;
+      for (var j = 0; j < ml.length; j++) {
+        var o = document.createElement('option');
+        o.value = ml[j].id;
+        o.textContent = ml[j].label;
+        if (ml[j].id === ag.current_model) o.selected = true;
+        sel.appendChild(o);
+      }
+      row.appendChild(sel);
+      tbl.appendChild(row);
+    }
+    m.appendChild(tbl);
+
+    var br = document.createElement('div');
+    br.style.cssText = 'display:flex;justify-content:space-between;margin-top:22px;';
+    var rb = document.createElement('button');
+    rb.textContent = 'Reset to Defaults';
+    rb.style.cssText = 'background:transparent;color:#f87171;border:1px solid rgba(248,113,113,0.4);border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;';
+    rb.onclick = doReset;
+    var rd = document.createElement('div');
+    rd.style.cssText = 'display:flex;gap:10px;';
+    var cb = document.createElement('button');
+    cb.textContent = 'Cancel';
+    cb.style.cssText = 'background:#383850;color:#e0e0e0;border:none;border-radius:6px;padding:8px 20px;font-size:13px;cursor:pointer;';
+    cb.onclick = closeModal;
+    var sb = document.createElement('button');
+    sb.id = 'mc-save';
+    sb.textContent = 'Save';
+    sb.style.cssText = 'background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 24px;font-size:13px;cursor:pointer;font-weight:500;';
+    sb.onclick = doSave;
+    rd.appendChild(cb);
+    rd.appendChild(sb);
+    br.appendChild(rb);
+    br.appendChild(rd);
+    m.appendChild(br);
+
+    var st = document.createElement('div');
+    st.id = 'mc-st';
+    st.style.cssText = 'margin-top:12px;font-size:12px;text-align:center;min-height:18px;color:#888;';
+    m.appendChild(st);
+
+    ov.appendChild(m);
+    document.body.appendChild(ov);
+  }
+
+  function closeModal() { var e = document.getElementById('mc-ov'); if (e) e.remove(); }
+
+  function stat(msg, ok) {
+    var e = document.getElementById('mc-st');
+    if (e) { e.textContent = msg; e.style.color = ok ? '#4ade80' : '#f87171'; }
+  }
+
+  function doSave() {
+    var o = {}, s = document.querySelectorAll('.mc-sel');
+    for (var i = 0; i < s.length; i++) o[s[i].dataset.key] = s[i].value;
+    var btn = document.getElementById('mc-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    fetch(API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(o) })
+      .then(function(r) { if (r.ok) { stat('Saved!', true); setTimeout(closeModal, 1000); } else stat('Save failed', false); })
+      .catch(function(e) { stat('Error: ' + e, false); })
+      .finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
+  }
+
+  function doReset() {
+    if (!confirm('Reset all models to defaults?')) return;
+    fetch(API + '/reset', { method: 'POST' })
+      .then(function(r) { if (r.ok) { stat('Reset!', true); setTimeout(function() { closeModal(); openModal(); }, 800); } else stat('Reset failed', false); })
+      .catch(function(e) { stat('Error: ' + e, false); });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function() { setTimeout(createBtn, 500); });
+  else setTimeout(createBtn, 500);
+})();
+</script>
+"""
+
 # Persistent client for connection reuse
 http_client = httpx.AsyncClient(
     timeout=httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=10.0),
@@ -230,6 +411,60 @@ async def rename_session(session_id: str, request: Request):
         )
     except Exception as e:
         logger.error(f"Error renaming session: {e}")
+        return Response(content=f'{{"error": "{str(e)}"}}', status_code=500,
+                        media_type="application/json")
+
+
+@app.get("/api/config/models")
+async def get_model_config():
+    """Return current model configuration and available models."""
+    try:
+        overrides_json = await redis_client.get(REDIS_CONFIG_KEY)
+        overrides = json.loads(overrides_json) if overrides_json else {}
+    except Exception as e:
+        logger.warning(f"Could not read config from Redis: {e}")
+        overrides = {}
+
+    agents = []
+    for meta in AGENT_CONFIG_META:
+        current = overrides.get(meta["key"], meta["default"])
+        agents.append({
+            "key": meta["key"],
+            "label": meta["label"],
+            "current_model": current,
+            "default_model": meta["default"],
+            "is_image_model": meta.get("is_image", False),
+        })
+    return {
+        "agents": agents,
+        "available_models": AVAILABLE_MODELS_LIST,
+        "image_models": IMAGE_MODELS_LIST,
+    }
+
+
+@app.post("/api/config/models")
+async def save_model_config(request: Request):
+    """Save model configuration overrides to Redis."""
+    try:
+        overrides = await request.json()
+        await redis_client.set(REDIS_CONFIG_KEY, json.dumps(overrides))
+        logger.info(f"Saved model config to Redis: {overrides}")
+        return {"status": "ok", "message": "Configuration saved"}
+    except Exception as e:
+        logger.error(f"Error saving model config: {e}")
+        return Response(content=f'{{"error": "{str(e)}"}}', status_code=500,
+                        media_type="application/json")
+
+
+@app.post("/api/config/models/reset")
+async def reset_model_config():
+    """Reset all model overrides to defaults."""
+    try:
+        await redis_client.delete(REDIS_CONFIG_KEY)
+        logger.info("Model config reset to defaults")
+        return {"status": "ok", "message": "Reset to defaults"}
+    except Exception as e:
+        logger.error(f"Error resetting model config: {e}")
         return Response(content=f'{{"error": "{str(e)}"}}', status_code=500,
                         media_type="application/json")
 
@@ -342,7 +577,7 @@ async def proxy(request: Request, path: str):
             # Inject session-naming script into Dev UI HTML pages
             content_type = response.headers.get('content-type', '')
             if 'text/html' in content_type and b'</body>' in content:
-                content = content.replace(b'</body>', SESSION_NAME_SCRIPT + b'</body>')
+                content = content.replace(b'</body>', SESSION_NAME_SCRIPT + MODEL_CONFIG_SCRIPT + b'</body>')
                 resp_headers['content-length'] = str(len(content))
 
             return Response(
